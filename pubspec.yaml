@@ -24,4 +24,5 @@ flutter:
   uses-material-design: true
   assets:
     - .env
-    - assets/boundary.geojson
+    - assets/Boundary.geojson
+    - assets/boundary_wgs84.geojson

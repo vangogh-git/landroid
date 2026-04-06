@@ -24,64 +24,67 @@ class _MapScreenState extends State<MapScreen> {
     _loadBoundary();
   }
 
-Future<void> _loadBoundary() async {
-  try {
-    final raw = await rootBundle.loadString('assets/boundary.geojson');
-    final data = json.decode(raw);
+  Future<void> _loadBoundary() async {
+    try {
+      final raw = await rootBundle.loadString('assets/boundary_wgs84.geojson');
+      final data = json.decode(raw);
 
-    List coords = [];
-    String geomType = '';
+      List coords = [];
+      String geomType = '';
 
-    Map<String, dynamic> geometry;
-    if (data['type'] == 'FeatureCollection') {
-      geometry = data['features'][0]['geometry'];
-    } else if (data['type'] == 'Feature') {
-      geometry = data['geometry'];
-    } else {
-      geometry = data;
-    }
-
-    geomType = geometry['type'];
-
-    switch (geomType) {
-      case 'Polygon':
-        coords = geometry['coordinates'][0];
-        break;
-      case 'MultiPolygon':
-        coords = geometry['coordinates'][0][0];
-        break;
-      case 'LineString':
-        coords = geometry['coordinates'];
-        break;
-      case 'MultiLineString':
-        coords = geometry['coordinates'][0];
-        break;
-      default:
-        throw Exception('Unsupported geometry: $geomType');
-    }
-
-    if (coords.isEmpty) throw Exception('Empty coordinates');
-
-    // Validate WGS84 range
-    final points = coords.map<LatLng>((c) {
-      final lat = (c[1] as num).toDouble();
-      final lng = (c[0] as num).toDouble();
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-        throw Exception('Coordinates are UTM meters, not WGS84. Run extract_coords.py');
+      Map<String, dynamic> geometry;
+      if (data['type'] == 'FeatureCollection') {
+        geometry = data['features'][0]['geometry'];
+      } else if (data['type'] == 'Feature') {
+        geometry = data['geometry'];
+      } else {
+        geometry = data;
       }
-      return LatLng(lat, lng);
-    }).toList();
 
-    setState(() {
-      _boundaryPoints = points;
-      _statusMessage = 'Parcel loaded — $geomType, ${points.length} points';
-    });
-  } catch (e) {
-    setState(() {
-      _statusMessage = 'Error: $e';
-    });
+      geomType = geometry['type'];
+
+      switch (geomType) {
+        case 'Polygon':
+          coords = geometry['coordinates'][0];
+          break;
+        case 'MultiPolygon':
+          coords = geometry['coordinates'][0][0];
+          break;
+        case 'LineString':
+          coords = geometry['coordinates'];
+          break;
+        case 'MultiLineString':
+          coords = geometry['coordinates'][0];
+          break;
+        default:
+          throw Exception('Unsupported geometry: $geomType');
+      }
+
+      if (coords.isEmpty) throw Exception('Empty coordinates');
+
+      // Validate WGS84 range — if lat is outside -90..90 the coords are still UTM
+      final points = coords.map<LatLng>((c) {
+        final lat = (c[1] as num).toDouble();
+        final lng = (c[0] as num).toDouble();
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          throw Exception(
+            'Coordinates look like UTM meters (lat=$lat), not WGS84 decimal degrees. '
+            'Run: python reproject_boundary.py',
+          );
+        }
+        return LatLng(lat, lng);
+      }).toList();
+
+      setState(() {
+        _boundaryPoints = points;
+        _statusMessage = 'Parcel loaded — $geomType, ${points.length} points';
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = 'Error: $e';
+      });
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -133,8 +136,7 @@ Future<void> _loadBoundary() async {
                 )
               else
                 TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.birdscale.landroid',
                 ),
 
@@ -208,8 +210,8 @@ Future<void> _loadBoundary() async {
                   Expanded(
                     child: Text(
                       _statusMessage,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
                     ),
                   ),
                 ],

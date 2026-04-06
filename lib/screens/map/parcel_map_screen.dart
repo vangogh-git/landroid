@@ -5,7 +5,9 @@ import 'package:latlong2/latlong.dart';
 import '../../services/geojson_service.dart';
 
 class ParcelMapScreen extends StatefulWidget {
-  const ParcelMapScreen({super.key});
+  final String role;
+
+  const ParcelMapScreen({super.key, required this.role});
 
   @override
   State<ParcelMapScreen> createState() => _ParcelMapScreenState();
@@ -85,6 +87,7 @@ class _ParcelMapScreenState extends State<ParcelMapScreen> {
             options: MapOptions(
               initialCenter: center,
               initialZoom: 17,
+              maxZoom: 22,
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all,
               ),
@@ -92,8 +95,9 @@ class _ParcelMapScreenState extends State<ParcelMapScreen> {
             children: [
               TileLayer(
                 urlTemplate: isSatellite
-                    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                    ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
                     : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                maxZoom: 22,
                 userAgentPackageName: 'com.example.landroid',
               ),
               PolygonLayer(
@@ -131,7 +135,6 @@ class _ParcelMapScreenState extends State<ParcelMapScreen> {
               ),
             ],
           ),
-
           Positioned(
             top: 18,
             right: 18,
@@ -155,7 +158,6 @@ class _ParcelMapScreenState extends State<ParcelMapScreen> {
               ],
             ),
           ),
-
           Positioned(
             left: 16,
             bottom: 16,

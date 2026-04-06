@@ -31,12 +31,24 @@ class MyApp extends StatelessWidget {
       initialRoute: '/',
 
       // ✅ ROUTES (navigation)
-      routes: {
-        '/': (context) => const LoginScreen(),
-        '/onboarding': (context) => const OnboardingScreen(),
-        '/landowner': (context) => const LandownerDashboard(),
-        '/consultant': (context) => const ConsultantDashboard(),
-        '/map': (context) => const ParcelMapScreen(),
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/':
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
+          case '/onboarding':
+            return MaterialPageRoute(builder: (_) => const OnboardingScreen());
+          case '/landowner':
+            return MaterialPageRoute(
+                builder: (_) => const LandownerDashboard(role: 'landowner'));
+          case '/consultant':
+            return MaterialPageRoute(
+                builder: (_) => const ConsultantDashboard(role: 'consultant'));
+          case '/map':
+            return MaterialPageRoute(
+                builder: (_) => const ParcelMapScreen(role: 'consultant'));
+          default:
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
       },
     );
   }

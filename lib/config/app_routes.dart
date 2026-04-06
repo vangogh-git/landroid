@@ -9,8 +9,8 @@ class AppRoutes {
   static Map<String, WidgetBuilder> routes = {
     "/": (context) => const LoginScreen(),
     "/onboarding": (context) => const OnboardingScreen(),
-    "/consultant": (context) => const ConsultantDashboard(),
-    "/landowner": (context) => const LandownerDashboard(),
-    "/map": (context) => const ParcelMapScreen(),
+    "/consultant": (context) => const ConsultantDashboard(role: 'consultant'),
+    "/landowner": (context) => const LandownerDashboard(role: 'landowner'),
+    "/map": (context) => const ParcelMapScreen(role: 'consultant'),
   };
 }

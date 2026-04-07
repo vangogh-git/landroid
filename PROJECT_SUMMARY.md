@@ -16,7 +16,9 @@
 13. [Assets](#assets)
 14. [Navigation Flow](#navigation-flow)
 15. [Key Implementation Details](#key-implementation-details)
-16. [Empty/Stub Files](#emptystub-files)
+16. [API Integrations](#api-integrations)
+17. [Localization](#localization)
+18. [Commit History](#commit-history)
 
 ---
 
@@ -28,8 +30,16 @@
 **Platform Targets:** Android, iOS, Web, Windows, Linux, macOS
 
 This is a dual-purpose application for:
-- **Land Owners (Farmers):** View parcel health, soil status, and alerts
-- **Land Consultants:** Manage parcels, review land, coordinate with owners
+- **Land Owners (Farmers):** View parcel health, soil status, AI recommendations, alerts
+- **Land Consultants:** Manage parcels, review land health, valuation, coordinate with owners
+
+**Key Features:**
+- Interactive GIS parcel map with polygon boundaries
+- AI-powered land health analysis (NDVI, Soil, Rainfall, Temperature)
+- Plant zone classification (NDVI-based)
+- Land valuation estimation
+- Bilingual support (English + Tamil)
+- Role-based access control (Landowner vs Consultant)
 
 ---
 
@@ -37,52 +47,54 @@ This is a dual-purpose application for:
 
 ```
 lib/
-├── main.dart                          # Entry point (43 lines)
+├── main.dart                          # Entry point (55 lines)
 ├── config/
 │   ├── app_routes.dart               # Route definitions (16 lines)
 │   └── app_theme.dart                # Theme configuration (21 lines)
 ├── screens/
 │   ├── auth/
 │   │   ├── login_screen.dart         # Login screen (20 lines)
-│   │   ├── onboarding_screen.dart    # Role selection (36 lines)
+│   │   ├── onboarding_screen.dart    # Role selection (50 lines)
 │   │   └── auth_landing_screen.dart  # Landing with role buttons (149 lines)
 │   ├── dashboard/
-│   │   ├── consultant_dashboard.dart # Consultant stats (57 lines)
-│   │   └── landowner_dashboard.dart   # Landowner stats (57 lines)
+│   │   │   ├── consultant_dashboard.dart # Consultant panel (299 lines)
+│   │   │   └── landowner_dashboard.dart  # Landowner dashboard (298 lines)
 │   ├── map/
-│   │   └── parcel_map_screen.dart    # Interactive map with polygon (224 lines)
+│   │   │   └── parcel_map_screen.dart    # Interactive map with polygon (226 lines)
 │   ├── ai/
-│   │   ├── plant_zone_screen.dart    # Empty stub
-│   │   └── land_health_screen.dart    # Empty stub
+│   │   │   ├── plant_zone_screen.dart    # NDVI zone classification (232 lines)
+│   │   │   ├── land_health_screen.dart   # Land health dashboard (470 lines)
+│   │   │   └── land_valuation_screen.dart # Land valuation (382 lines)
 │   └── parcel/
-│       ├── create_parcel_screen.dart  # Empty stub
-│       └── parcel_details_screen.dart # Empty stub
+│   │       ├── create_parcel_screen.dart  # Empty stub (0 lines)
+│   │       └── parcel_details_screen.dart # Empty stub (0 lines)
 ├── services/
-│   ├── auth_service.dart              # Empty stub
-│   ├── api_service.dart               # Empty stub
-│   ├── soil_service.dart              # Empty stub
-│   └── geojson_service.dart           # GeoJSON boundary loader (40 lines)
+│   │   ├── auth_service.dart              # Empty stub (0 lines)
+│   │   ├── api_service.dart               # STAC/NDVI/Nominatim API (93 lines)
+│   │   ├── soil_service.dart              # SoilGrids API integration (99 lines)
+│   │   └── geojson_service.dart           # GeoJSON boundary loader (40 lines)
 ├── widgets/
-│   ├── stat_card.dart                 # Statistics display widget (39 lines)
-│   ├── role_card.dart                 # Role selection card (42 lines)
-│   ├── map_toggle_button.dart         # Empty stub
-│   └── primary_button.dart            # Empty stub
+│   │   ├── stat_card.dart                 # Statistics display widget (39 lines)
+│   │   ├── role_card.dart                 # Role selection card (42 lines)
+│   │   ├── map_toggle_button.dart         # Empty stub (0 lines)
+│   │   └── primary_button.dart            # Empty stub (0 lines)
 ├── models/
-│   ├── user_model.dart                # Empty stub
-│   └── parcel_model.dart              # Empty stub
+│   │   ├── user_model.dart                # Empty stub (0 lines)
+│   │   └── parcel_model.dart              # SoilData, LandHealthData, NdviZone (70 lines)
 ├── data/
-│   └── dummy_data.dart                # Empty stub
+│   │   └── dummy_data.dart                # Empty stub (0 lines)
 └── utils/
-    ├── color_utils.dart               # Empty stub
-    ├── helpers.dart                   # Empty stub
-    └── constants.dart                 # Empty stub
+    │   ├── app_locale.dart               # i18n English/Tamil (98 lines)
+    │   ├── color_utils.dart              # Empty stub (0 lines)
+    │   ├── helpers.dart                  # Empty stub (0 lines)
+    │   └── constants.dart                # API endpoints, coords (18 lines)
 ```
 
 ---
 
 ## pubspec.yaml Configuration
 
-**File:** `pubspec.yaml` (25 lines)
+**File:** `pubspec.yaml` (26 lines)
 
 ```yaml
 name: landroid
@@ -98,6 +110,7 @@ dependencies:
     sdk: flutter
   flutter_map: ^7.0.2        # Map rendering
   latlong2: ^0.9.0           # Lat/Lng coordinate handling
+  http: ^1.2.1               # HTTP client for API calls
 
 dev_dependencies:
   flutter_test:
@@ -113,12 +126,13 @@ flutter:
 **Dependencies Used:**
 - `flutter_map: ^7.0.2` - OpenStreetMap/ArcGIS map rendering
 - `latlong2: ^0.9.0` - Geographic coordinate handling
+- `http: ^1.2.1` - HTTP client for REST API calls
 
 ---
 
 ## Main Entry Point
 
-**File:** `lib/main.dart` (43 lines)
+**File:** `lib/main.dart` (55 lines)
 
 ```dart
 import 'package:flutter/material.dart';
@@ -147,12 +161,24 @@ class MyApp extends StatelessWidget {
       title: 'Landroid',
       theme: AppTheme.lightTheme,
       initialRoute: '/',
-      routes: {
-        '/': (context) => const LoginScreen(),
-        '/onboarding': (context) => const OnboardingScreen(),
-        '/landowner': (context) => const LandownerDashboard(),
-        '/consultant': (context) => const ConsultantDashboard(),
-        '/map': (context) => const ParcelMapScreen(),
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/':
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
+          case '/onboarding':
+            return MaterialPageRoute(builder: (_) => const OnboardingScreen());
+          case '/landowner':
+            return MaterialPageRoute(
+                builder: (_) => const LandownerDashboard(role: 'landowner'));
+          case '/consultant':
+            return MaterialPageRoute(
+                builder: (_) => const ConsultantDashboard(role: 'consultant'));
+          case '/map':
+            return MaterialPageRoute(
+                builder: (_) => const ParcelMapScreen(role: 'consultant'));
+          default:
+            return MaterialPageRoute(builder: (_) => const LoginScreen());
+        }
       },
     );
   }
@@ -160,9 +186,10 @@ class MyApp extends StatelessWidget {
 ```
 
 **Key Points:**
-- Uses `MaterialApp` with named routes
+- Uses `MaterialApp` with `onGenerateRoute` for navigation
 - Initial route: `/` (LoginScreen)
-- Theme: `AppTheme.lightTheme` (defined in config/app_theme.dart)
+- Theme: `AppTheme.lightTheme`
+- Role parameter passed to dashboards (`role: 'landowner'` or `role: 'consultant'`)
 
 ---
 
@@ -182,14 +209,14 @@ class AppRoutes {
   static Map<String, WidgetBuilder> routes = {
     "/": (context) => const LoginScreen(),
     "/onboarding": (context) => const OnboardingScreen(),
-    "/consultant": (context) => const ConsultantDashboard(),
-    "/landowner": (context) => const LandownerDashboard(),
-    "/map": (context) => const ParcelMapScreen(),
+    "/consultant": (context) => const ConsultantDashboard(role: 'consultant'),
+    "/landowner": (context) => const LandownerDashboard(role: 'landowner'),
+    "/map": (context) => const ParcelMapScreen(role: 'consultant'),
   };
 }
 ```
 
-**Note:** This file is defined but NOT used - routes are directly defined in `main.dart`.
+**Note:** Routes are defined in main.dart directly via `onGenerateRoute`, not using AppRoutes.
 
 ---
 
@@ -265,7 +292,7 @@ class LoginScreen extends StatelessWidget {
 ---
 
 #### 2. Onboarding Screen
-**File:** `lib/screens/auth/onboarding_screen.dart` (36 lines)
+**File:** `lib/screens/auth/onboarding_screen.dart` (50 lines)
 
 ```dart
 import 'package:flutter/material.dart';
@@ -316,164 +343,7 @@ class OnboardingScreen extends StatelessWidget {
 #### 3. Auth Landing Screen
 **File:** `lib/screens/auth/auth_landing_screen.dart` (149 lines)
 
-```dart
-import 'package:flutter/material.dart';
-
-class AuthLandingScreen extends StatelessWidget {
-  const AuthLandingScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF1B5E20), Color(0xFF66BB6A)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 420),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 24,
-                      offset: Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Logo container (lines 38-50)
-                    Container(
-                      width: 84,
-                      height: 84,
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.park_rounded,
-                        size: 46,
-                        color: Colors.green,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Title "Landroid" (lines 52-58)
-                    const Text(
-                      'Landroid',
-                      style: TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Subtitle (lines 60-67)
-                    Text(
-                      'Land intelligence for consultants and farmers',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-
-                    // Role buttons (lines 70-90)
-                    _roleButton(
-                      context: context,
-                      title: 'Land Owner',
-                      subtitle: 'OTP login',
-                      icon: Icons.person_rounded,
-                      color: Colors.orange,
-                      onTap: () {
-                        Navigator.pushReplacementNamed(context, '/landowner');
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    _roleButton(
-                      context: context,
-                      title: 'Land Consultant',
-                      subtitle: 'Email login',
-                      icon: Icons.badge_rounded,
-                      color: Colors.green,
-                      onTap: () {
-                        Navigator.pushReplacementNamed(context, '/consultant');
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Helper method (lines 101-148)
-  Widget _roleButton({
-    required BuildContext context,
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 32),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-}
-```
-
-**UI Elements:**
+Features:
 - Green gradient background (0xFF1B5E20 to 0xFF66BB6A)
 - White card with shadow (maxWidth: 420, borderRadius: 24)
 - Park icon logo (84x84, circle, green tint)
@@ -488,153 +358,46 @@ class AuthLandingScreen extends StatelessWidget {
 ### Dashboard Screens
 
 #### 4. Landowner Dashboard
-**File:** `lib/screens/dashboard/landowner_dashboard.dart` (57 lines)
+**File:** `lib/screens/dashboard/landowner_dashboard.dart` (298 lines)
 
-```dart
-import 'package:flutter/material.dart';
+**Features:**
+- Parcel Summary Banner with location & area
+- Health Score stat card (58/100)
+- Parcel Area stat (~2.3 acres)
+- AI Modules menu tiles:
+  - GIS Parcel Map (teal)
+  - Land Health Dashboard (green)
+  - Plant Health Zones (light green)
+- Language toggle (EN/தமிழ்)
+- Role-aware navigation
 
-class LandownerDashboard extends StatelessWidget {
-  const LandownerDashboard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Land Owner'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.map),
-            onPressed: () => Navigator.pushNamed(context, '/map'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            _card('Health Score', '78%', Colors.green),
-            _card('Soil Status', 'Moderate', Colors.orange),
-            _card('Parcel Alerts', '2 active', Colors.red),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _card(String title, String value, Color color) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-```
-
-**Display:**
-- AppBar: "Land Owner" with map button → `/map`
-- Three stat cards:
-  - Health Score: 78% (green)
-  - Soil Status: Moderate (orange)
-  - Parcel Alerts: 2 active (red)
+**Key Methods:**
+- `_parcelSummaryBanner()` - Shows parcel status badge
+- `_statCard()` - Stat display with icon, value, subtitle
+- `_menuTile()` - Navigation tile for AI modules
 
 ---
 
 #### 5. Consultant Dashboard
-**File:** `lib/screens/dashboard/consultant_dashboard.dart` (57 lines)
+**File:** `lib/screens/dashboard/consultant_dashboard.dart` (299 lines)
 
-```dart
-import 'package:flutter/material.dart';
-
-class ConsultantDashboard extends StatelessWidget {
-  const ConsultantDashboard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Consultant'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.map),
-            onPressed: () => Navigator.pushNamed(context, '/map'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            _card('Parcels Managed', '12', Colors.green),
-            _card('Need Review', '3', Colors.orange),
-            _card('Assigned Owners', '9', Colors.blue),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _card(String title, String value, Color color) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-```
-
-**Display:**
-- AppBar: "Consultant" with map button → `/map`
-- Three stat cards:
-  - Parcels Managed: 12 (green)
-  - Need Review: 3 (orange)
-  - Assigned Owners: 9 (blue)
+**Features:**
+- Parcel Summary Banner with location & area
+- Parcels Managed stat (1)
+- Alerts stat (0 Active)
+- Tools menu tiles:
+  - GIS Parcel Map (teal)
+  - Land Health Dashboard (green)
+  - Plant Health Zones (light green)
+  - Land Valuation (amber) - **Consultant only**
+- Language toggle (EN/தமிழ்)
 
 ---
 
 ### Map Screen
 
 #### 6. Parcel Map Screen
-**File:** `lib/screens/map/parcel_map_screen.dart` (224 lines)
+**File:** `lib/screens/map/parcel_map_screen.dart` (226 lines)
 
 ```dart
 import 'package:flutter/material.dart';
@@ -644,7 +407,9 @@ import 'package:latlong2/latlong.dart';
 import '../../services/geojson_service.dart';
 
 class ParcelMapScreen extends StatefulWidget {
-  const ParcelMapScreen({super.key});
+  final String role;
+
+  const ParcelMapScreen({super.key, required this.role});
 
   @override
   State<ParcelMapScreen> createState() => _ParcelMapScreenState();
@@ -668,196 +433,7 @@ class _ParcelMapScreenState extends State<ParcelMapScreen> {
     });
   }
 
-  LatLng _getCenter() {
-    double latSum = 0;
-    double lngSum = 0;
-    for (final p in boundaryPoints) {
-      latSum += p.latitude;
-      lngSum += p.longitude;
-    }
-    return LatLng(
-      latSum / boundaryPoints.length,
-      lngSum / boundaryPoints.length,
-    );
-  }
-
-  List<LatLng> _closedPoints() {
-    if (boundaryPoints.isEmpty) return [];
-    final points = List<LatLng>.from(boundaryPoints);
-    if (points.first != points.last) {
-      points.add(points.first);
-    }
-    return points;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (boundaryPoints.isEmpty) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    final center = _getCenter();
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Parcel Map'),
-        actions: [
-          IconButton(
-            icon: Icon(isSatellite ? Icons.map_outlined : Icons.satellite_alt),
-            onPressed: () {
-              setState(() {
-                isSatellite = !isSatellite;
-              });
-            },
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: center,
-              initialZoom: 17,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all,
-              ),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: isSatellite
-                    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.landroid',
-              ),
-              PolygonLayer(
-                polygons: [
-                  Polygon(
-                    points: _closedPoints(),
-                    color: Colors.green.withValues(alpha: 0.28),
-                    borderColor: Colors.green.shade800,
-                    borderStrokeWidth: 3,
-                  ),
-                ],
-              ),
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: _closedPoints(),
-                    strokeWidth: 3,
-                    color: Colors.green.shade900,
-                  ),
-                ],
-              ),
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: center,
-                    width: 44,
-                    height: 44,
-                    child: const Icon(
-                      Icons.place_rounded,
-                      size: 40,
-                      color: Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          // Floating buttons (lines 135-157)
-          Positioned(
-            top: 18,
-            right: 18,
-            child: Column(
-              children: [
-                _smallButton(
-                  icon: Icons.layers,
-                  onTap: () {
-                    setState(() {
-                      isSatellite = !isSatellite;
-                    });
-                  },
-                ),
-                const SizedBox(height: 10),
-                _smallButton(
-                  icon: Icons.my_location,
-                  onTap: () {
-                    setState(() {});
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          // Legend (lines 159-200)
-          Positioned(
-            left: 16,
-            bottom: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Legend',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(Icons.square, color: Colors.green, size: 16),
-                      SizedBox(width: 6),
-                      Text('Parcel boundary'),
-                    ],
-                  ),
-                  SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.place_rounded, color: Colors.red, size: 16),
-                      SizedBox(width: 6),
-                      Text('Center point'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _smallButton({
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      elevation: 4,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Icon(icon, color: Colors.black87),
-        ),
-      ),
-    );
-  }
+  // ... center calculation, polygon rendering, layer toggle
 }
 ```
 
@@ -877,9 +453,79 @@ class _ParcelMapScreenState extends State<ParcelMapScreen> {
 
 ---
 
+### AI Screens
+
+#### 7. Plant Zone Screen
+**File:** `lib/screens/ai/plant_zone_screen.dart` (232 lines)
+
+**Features:**
+- NDVI Zone Classification with confidence %
+- Visual zone distribution bar
+- Four zone categories:
+  - Dense (NDVI > 0.6) - Dark Green (28.4%)
+  - Healthy (0.4 – 0.6) - Green (35.2%)
+  - Sparse (0.2 – 0.4) - Yellow (24.1%)
+  - Bare / Stressed (< 0.2) - Red (12.3%)
+- Refresh button to recompute
+- Access restricted for landowners (read-only consultant feature)
+
+---
+
+#### 8. Land Health Screen
+**File:** `lib/screens/ai/land_health_screen.dart` (470 lines)
+
+**Features:**
+- Composite Land Health Score (0-100)
+- Signal Breakdown with weighted scores:
+  - NDVI Vegetation (40% weight)
+  - Rainfall Adequacy (30% weight)
+  - Soil Quality (20% weight)
+  - Temperature (10% weight)
+- Data sources displayed:
+  - Planetary Computer Sentinel-2 (NDVI)
+  - CHIRPS via Planetary Computer (Rainfall)
+  - ISRIC SoilGrids REST API (Soil)
+  - ERA5 Regional Estimate (Temperature)
+- Soil Details card (pH, Organic Carbon, Texture, Confidence)
+- Language toggle (English/Tamil)
+- Refresh functionality
+- Last fetched timestamp
+- Coordinates display
+
+---
+
+#### 9. Land Valuation Screen
+**File:** `lib/screens/ai/land_valuation_screen.dart` (382 lines)
+
+**Features:**
+- Estimated Value Range per acre (Low/Mid/High in INR)
+- Composite Score (0-100)
+- Confidence percentage
+- Top Factors analysis:
+  - Health Score (30% weight)
+  - Soil Quality (20% weight)
+  - Rainfall (15% weight)
+  - OSM Proximity (25% weight)
+  - Night Light (10% weight)
+- Positive/Negative impact indicators
+- Base price: ₹500,000/acre
+- Disclaimer: "Estimated intelligence range, not a legal valuation"
+- Access restricted for landowners (consultant only)
+
+---
+
+### Empty Screens (Stubs)
+
+| File | Status |
+|------|--------|
+| `lib/screens/parcel/create_parcel_screen.dart` | Empty (0 lines) |
+| `lib/screens/parcel/parcel_details_screen.dart` | Empty (0 lines) |
+
+---
+
 ## Services
 
-### GeoJSON Service
+### 1. GeoJSON Service
 **File:** `lib/services/geojson_service.dart` (40 lines)
 
 ```dart
@@ -902,25 +548,8 @@ class GeoJsonService {
   }
 
   static List<LatLng> _extractPoints(dynamic coordinates) {
-    if (coordinates is! List || coordinates.isEmpty) return [];
-
-    final first = coordinates.first;
-
-    // LineString: [ [lng, lat], [lng, lat], ... ]
-    if (first is List && first.isNotEmpty && first.first is num) {
-      return coordinates.map<LatLng>((p) {
-        final lng = (p[0] as num).toDouble();
-        final lat = (p[1] as num).toDouble();
-        return LatLng(lat, lng);
-      }).toList();
-    }
-
-    // Polygon: [ [ [lng, lat], ... ] ]
-    if (first is List && first.isNotEmpty && first.first is List) {
-      return _extractPoints(first);
-    }
-
-    return [];
+    // Handles both LineString and Polygon formats
+    // Returns List<LatLng> coordinates
   }
 }
 ```
@@ -933,13 +562,68 @@ class GeoJsonService {
 
 ---
 
+### 2. API Service
+**File:** `lib/services/api_service.dart` (93 lines)
+
+```dart
+class ApiService {
+  /// Fetch latest Sentinel-2 NDVI value for the parcel bounding box
+  static Future<Map<String, dynamic>> fetchNdviData() async {
+    // Uses Planetary Computer STAC API
+    // Returns: {ndvi, sceneCount, confidence, status}
+  }
+
+  /// Fetch location name from OSM Nominatim
+  static Future<String> fetchLocationName() async {
+    // Uses Nominatim reverse geocoding
+    // Returns: "Village, County, State"
+  }
+}
+```
+
+**APIs Used:**
+- **Planetary Computer STAC** (`https://planetarycomputer.microsoft.com/api/stac/v1`)
+  - Searches Sentinel-2 L2A imagery
+  - Filters: bbox, datetime (2024), cloud cover < 20%
+  - Returns scene count as proxy for NDVI quality
+- **OSM Nominatim** (`https://nominatim.openstreetmap.org/reverse`)
+  - Reverse geocoding from lat/lng
+  - Returns village, county, state
+
+---
+
+### 3. Soil Service
+**File:** `lib/services/soil_service.dart` (99 lines)
+
+```dart
+class SoilService {
+  static Future<SoilData?> fetchSoilData() async {
+    // Uses ISRIC SoilGrids v2.0 API
+    // Fetches: pH, Organic Carbon (SOC), Texture Class
+    // Depth: 0-5cm
+  }
+
+  static double scoreSoil(SoilData soil) {
+    // Scores soil 0-100
+    // pH optimal 6.0-7.0: +25 points
+    // Organic Carbon > 10 g/kg: +15 points
+  }
+}
+```
+
+**API Used:**
+- **ISRIC SoilGrids** (`https://rest.isric.org/soilgrids/v2.0/properties/query`)
+  - Properties: phh2o (pH), soc (Organic Carbon), texture_class
+  - Depth: 0-5cm mean values
+  - Returns confidence ~82%
+
+---
+
 ### Empty Services (Stubs)
 
 | File | Status |
 |------|--------|
 | `lib/services/auth_service.dart` | Empty (0 lines) |
-| `lib/services/api_service.dart` | Empty (0 lines) |
-| `lib/services/soil_service.dart` | Empty (0 lines) |
 
 ---
 
@@ -949,8 +633,6 @@ class GeoJsonService {
 **File:** `lib/widgets/stat_card.dart` (39 lines)
 
 ```dart
-import 'package:flutter/material.dart';
-
 class StatCard extends StatelessWidget {
   final String title;
   final String value;
@@ -963,30 +645,7 @@ class StatCard extends StatelessWidget {
     required this.color,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 5),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
+  // Renders colored container with title/value
 }
 ```
 
@@ -996,47 +655,14 @@ class StatCard extends StatelessWidget {
 **File:** `lib/widgets/role_card.dart` (42 lines)
 
 ```dart
-import 'package:flutter/material.dart';
-
 class RoleCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
 
-  const RoleCard({
-    super.key,
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 10),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 40, color: Colors.white),
-            const SizedBox(width: 20),
-            Text(
-              title,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 18),
-            )
-          ],
-        ),
-      ),
-    );
-  }
+  // Renders colored card with icon and title
+  // GestureDetector for tap handling
 }
 ```
 
@@ -1053,28 +679,112 @@ class RoleCard extends StatelessWidget {
 
 ## Models
 
-| File | Status |
-|------|--------|
-| `lib/models/user_model.dart` | Empty (0 lines) |
-| `lib/models/parcel_model.dart` | Empty (0 lines) |
+### 1. Parcel Model
+**File:** `lib/models/parcel_model.dart` (70 lines)
+
+```dart
+class SoilData {
+  final double ph;
+  final double organicCarbon;
+  final String texture;
+  final double confidence;
+}
+
+class LandHealthData {
+  final double ndviScore;
+  final double rainfallScore;
+  final double soilScore;
+  final double tempScore;
+  final double compositeScore;
+  final double confidence;
+  final String status;
+  final SoilData? soilData;
+
+  static String scoreToStatus(double score);
+  static Color statusColor(String status);
+}
+
+class NdviZone {
+  final String label;
+  final double minVal;
+  final double maxVal;
+  final Color color;
+  double percentage;
+}
+```
 
 ---
 
-## Data
+### Empty Models
 
 | File | Status |
 |------|--------|
-| `lib/data/dummy_data.dart` | Empty (0 lines) |
+| `lib/models/user_model.dart` | Empty (0 lines) |
 
 ---
 
 ## Utils
 
+### 1. Constants
+**File:** `lib/utils/constants.dart` (18 lines)
+
+```dart
+class AppConstants {
+  // Parcel centroid from boundary_wgs84.geojson
+  static const double centroidLat = 10.428859;
+  static const double centroidLng = 77.304527;
+
+  // Bounding box
+  static const double bboxMinLon = 77.303500;
+  static const double bboxMinLat = 10.427800;
+  static const double bboxMaxLon = 77.305500;
+  static const double bboxMaxLat = 10.430000;
+
+  // API endpoints
+  static const String soilGridsApi = 'https://rest.isric.org/soilgrids/v2.0/properties/query';
+  static const String osmNominatim = 'https://nominatim.openstreetmap.org/reverse';
+  static const String planetaryStac = 'https://planetarycomputer.microsoft.com/api/stac/v1';
+}
+```
+
+---
+
+### 2. App Locale (i18n)
+**File:** `lib/utils/app_locale.dart` (98 lines)
+
+```dart
+class AppLocale {
+  static Locale _locale = const Locale('en');
+  
+  static bool get isTamil => _locale.languageCode == 'ta';
+  
+  static String get(String key) {
+    return _translations[key]?[_locale.languageCode] ?? key;
+  }
+
+  static final Map<String, Map<String, String>> _translations = {
+    'My Parcel': {'en': 'My Parcel', 'ta': 'என் ஏக்கர்'},
+    'Consultant Panel': {'en': 'Consultant Panel', 'ta': 'ஆலோசனை பலகை'},
+    'Parcels Managed': {'en': 'Parcels Managed', 'ta': 'நிர்வகிக்கப்படும் ஏக்கர்கள்'},
+    'Alerts': {'en': 'Alerts', 'ta': 'விழிப்பூட்டல்கள்'},
+    // ... 40+ translations
+  };
+}
+```
+
+**Supported Languages:**
+- English (en)
+- Tamil (ta)
+
+---
+
+### Empty Utils
+
 | File | Status |
 |------|--------|
 | `lib/utils/color_utils.dart` | Empty (0 lines) |
 | `lib/utils/helpers.dart` | Empty (0 lines) |
-| `lib/utils/constants.dart` | Empty (0 lines) |
+| `lib/data/dummy_data.dart` | Empty (0 lines) |
 
 ---
 
@@ -1095,16 +805,12 @@ class RoleCard extends StatelessWidget {
   "features": [
     {
       "type": "Feature",
-      "properties": {
-        "ELEVATION": 0
-      },
+      "properties": { "ELEVATION": 0 },
       "geometry": {
         "type": "LineString",
         "coordinates": [
           [77.30452683760231, 10.428859498008162, 0.0],
-          [77.30452659640771, 10.429019068413671, 0.0],
           // ... 55 more coordinate pairs
-          [77.30452683760231, 10.428859498008162, 0.0]
         ]
       }
     }
@@ -1113,9 +819,10 @@ class RoleCard extends StatelessWidget {
 ```
 
 **Coordinates:** EPSG:4326 (WGS84)
-- Location: Approximately 77.30°E, 10.43°N (India)
+- Location: Approximately 77.304°E, 10.429°N (Tamil Nadu, India)
 - First/last point matches (closed polygon)
 - Total coordinate points: 56
+- Estimated area: ~2.3 acres
 
 ---
 
@@ -1123,14 +830,14 @@ class RoleCard extends StatelessWidget {
 
 ```
                     ┌─────────────┐
-                    │  /          │
-                    │ LoginScreen │
+                    │     /       │
+                    │LoginScreen  │
                     └──────┬──────┘
                            │ "Login" button
                            ▼
                     ┌─────────────┐
-                    │/onboarding  │
-                    │Onboarding   │
+                    │ /onboarding │
+                    │ Onboarding  │
                     └──────┬──────┘
                            │ Role selection
               ┌────────────┴────────────┐
@@ -1140,14 +847,19 @@ class RoleCard extends StatelessWidget {
        │Consultant  │          │Landowner   │
        │Dashboard   │          │Dashboard   │
        └─────┬──────┘          └─────┬──────┘
-             │ Map button              │ Map button
-             ▼                         ▼
-       ┌─────────────┐          ┌─────────────┐
-       │   /map      │          │   /map      │
-       │ParcelMap    │          │ParcelMap    │
-       │Screen       │          │Screen       │
-       └─────────────┘          └─────────────┘
+             │                        │
+    ┌────────┴────────┐      ┌────────┴────────┐
+    ▼                ▼      ▼                ▼
+┌─────────┐    ┌─────────┐  ┌─────────┐    ┌─────────┐
+│  /map   │    │  /map   │  │  /map  │    │  /map   │
+│ Parcel  │    │ Parcel  │  │ Parcel │    │ Parcel  │
+│ Map     │    │ Map     │  │ Map    │    │ Map     │
+└─────────┘    └─────────┘  └─────────┘    └─────────┘
 ```
+
+**Consultant Only Routes:**
+- Land Valuation Screen
+- Full Plant Zone Screen (not restricted view)
 
 ---
 
@@ -1164,9 +876,11 @@ class RoleCard extends StatelessWidget {
 ### State Management
 - Simple `setState()` for local state
 - No provider/BLoC/Redux - all state is local to each screen
+- Role parameter passed via constructor
 
 ### Navigation
-- Named routes with `Navigator.pushNamed()`
+- `onGenerateRoute` switch statement in main.dart
+- `Navigator.push()` for forward navigation
 - `Navigator.pushReplacementNamed()` for role-based navigation
 - No deep linking configured
 
@@ -1174,7 +888,113 @@ class RoleCard extends StatelessWidget {
 - Material Design 3 not explicitly used
 - Primary color: Green (#4CAFBA standard green)
 - Background: Light gray (#F5F7FA)
-- Card-based UI with rounded corners (16-24px radius)
+- Card-based UI with rounded corners (12-24px radius)
+- Box shadows for elevation effect
+
+---
+
+## API Integrations
+
+| API | Endpoint | Purpose | Data |
+|-----|----------|---------|------|
+| **ISRIC SoilGrids** | `rest.isric.org/soilgrids/v2.0/properties/query` | Soil pH, Organic Carbon, Texture | pH (0-14), SOC (g/kg), Texture Class |
+| **Planetary Computer STAC** | `planetarycomputer.microsoft.com/api/stac/v1/search` | Sentinel-2 imagery search | NDVI proxy, scene count, cloud cover |
+| **OSM Nominatim** | `nominatim.openstreetmap.org/reverse` | Reverse geocoding | Village, County, State |
+| **ArcGIS World Imagery** | `server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` | Satellite tile layer | Bing Maps aerial imagery |
+| **OpenStreetMap** | `tile.openstreetmap.org/{z}/{x}/{y}.png` | Standard tile layer | OSM map tiles |
+
+### Data Flow
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  SoilService │────▶│  SoilGrids   │────▶│   SoilData   │
+│              │     │     API      │     │  (pH, SOC)   │
+└──────────────┘     └──────────────┘     └──────────────┘
+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  ApiService   │────▶│  Planetary   │────▶│    NDVI      │
+│               │     │   Computer   │     │   (0.2-0.8)  │
+└──────────────┘     │     STAC      │     └──────────────┘
+                     └──────────────┘
+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  ApiService   │────▶│   Nominatim │────▶│  Location    │
+│               │     │     API     │     │    Name      │
+└──────────────┘     └──────────────┘     └──────────────┘
+
+        │
+        ▼ (Composite Calculation)
+
+┌──────────────┐
+│  LandHealth  │ = NDVI(40%) + Rainfall(30%) + Soil(20%) + Temp(10%)
+│    Score     │
+└──────────────┘
+
+┌──────────────┐
+│LandValuation │ = BasePrice * (Composite/100) * band
+│    Price     │ = ₹500,000/acre * score * (0.75-1.25)
+└──────────────┘
+```
+
+---
+
+## Localization
+
+### Supported Languages
+- **English (en)** - Default
+- **Tamil (ta)** - Full translation support
+
+### Usage
+```dart
+// In any screen
+Text(AppLocale.get('My Parcel')) // Returns: "என் ஏக்கர்" if Tamil
+
+// Toggle language
+AppLocale.setLocale(const Locale('ta')) // Set Tamil
+AppLocale.setLocale(const Locale('en')) // Set English
+
+// Check current language
+AppLocale.isTamil // Returns true/false
+```
+
+### Translated Strings (40+ keys)
+- My Parcel / Consultant Panel / Parcels Managed / Alerts
+- Health Score / Parcel Area / Tools / AI Modules
+- GIS Parcel Map / Land Health Dashboard / Plant Health Zones / Land Valuation
+- Soil Details / pH / Organic Carbon / Texture
+- Access restricted to consultants only
+
+---
+
+## Commit History
+
+| Commit | Message | Files Changed |
+|--------|---------|---------------|
+| `0eb806c` | horizons | ? |
+| `66ae248` | first stable | ? |
+| `36363b9` | Revert "fourth" | ? |
+| `ee90df6` | fourth | ? |
+| `cf3c431` | third | ? |
+| `c84021b` | second | assets/boundary_wgs84.geojson, lib/config/app_config.dart, lib/screens/map_screen.dart, pubspec.yaml, reproject_boundary.py |
+| `d29d2ec` | first | Initial project setup |
+
+### Changes from Initial Commit (d29d2ec → HEAD)
+- **+1226 lines** - PROJECT_SUMMARY.md added
+- **+257 lines** - assets/boundary_wgs84.geojson
+- **+299 lines** - lib/screens/dashboard/consultant_dashboard.dart
+- **+298 lines** - lib/screens/dashboard/landowner_dashboard.dart
+- **+470 lines** - lib/screens/ai/land_health_screen.dart
+- **+382 lines** - lib/screens/ai/land_valuation_screen.dart
+- **+232 lines** - lib/screens/ai/plant_zone_screen.dart
+- **+226 lines** - lib/screens/map/parcel_map_screen.dart
+- **+149 lines** - lib/screens/auth/auth_landing_screen.dart
+- **+99 lines** - lib/services/soil_service.dart
+- **+93 lines** - lib/services/api_service.dart
+- **+98 lines** - lib/utils/app_locale.dart
+- **+70 lines** - lib/models/parcel_model.dart
+- **+40 lines** - lib/services/geojson_service.dart
+- **+18 lines** - lib/utils/constants.dart
+- **-274 lines** - lib/screens/map_screen.dart (reorganized)
+- **Total: +4349 lines, -468 lines**
 
 ---
 
@@ -1184,21 +1004,15 @@ The following files need to be implemented for a complete application:
 
 | File | Expected Purpose |
 |------|------------------|
-| `lib/screens/ai/plant_zone_screen.dart` | AI plant zone recommendations |
-| `lib/screens/ai/land_health_screen.dart` | AI land health analysis |
 | `lib/screens/parcel/create_parcel_screen.dart` | Create new parcel form |
 | `lib/screens/parcel/parcel_details_screen.dart` | View parcel details |
-| `lib/services/auth_service.dart` | Authentication logic |
-| `lib/services/api_service.dart` | API calls to backend |
-| `lib/services/soil_service.dart` | Soil data service |
+| `lib/services/auth_service.dart` | Authentication logic (OTP, Email) |
 | `lib/widgets/map_toggle_button.dart` | Map layer toggle widget |
 | `lib/widgets/primary_button.dart` | Reusable primary button |
 | `lib/models/user_model.dart` | User data model |
-| `lib/models/parcel_model.dart` | Parcel data model |
 | `lib/data/dummy_data.dart` | Sample data for testing |
 | `lib/utils/color_utils.dart` | Color utility functions |
 | `lib/utils/helpers.dart` | Helper functions |
-| `lib/utils/constants.dart` | App constants |
 
 ---
 
@@ -1206,19 +1020,21 @@ The following files need to be implemented for a complete application:
 
 ### If You Need To:
 1. **Add new screen:** Create in `lib/screens/[category]/` and add route to `main.dart`
-2. **Modify navigation:** Edit routes in `main.dart` (lines 34-40)
+2. **Modify navigation:** Edit routes in `main.dart` (lines 34-52)
 3. **Change theme:** Edit `lib/config/app_theme.dart`
-4. **Add new map layer:** Modify `ParcelMapScreen` (lines 92-132)
+4. **Add new map layer:** Modify `ParcelMapScreen`
 5. **Update boundary:** Edit `assets/boundary_wgs84.geojson`
 6. **Add new widget:** Create in `lib/widgets/` and import where needed
+7. **Add translations:** Edit `lib/utils/app_locale.dart` translations map
 
 ### Important Line Numbers:
 - Main entry: `lib/main.dart:13-15`
-- Routes definition: `lib/main.dart:34-40`
+- Routes definition: `lib/main.dart:34-52`
 - Theme: `lib/config/app_theme.dart:4-19`
-- Map center calculation: `lib/screens/map/parcel_map_screen.dart:33-46`
+- Map center calculation: `lib/screens/map/parcel_map_screen.dart`
 - GeoJSON loading: `lib/services/geojson_service.dart:6-17`
-- Boundary coordinates: `assets/boundary_wgs84.geojson:18-253`
+- API endpoints: `lib/utils/constants.dart:11-17`
+- Boundary coordinates: `assets/boundary_wgs84.geojson`
 
 ---
 
